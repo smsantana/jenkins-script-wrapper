@@ -1,0 +1,85 @@
+import org.jenkinsci.plugins.workflow.cps.CpsThread
+import org.jenkinsci.plugins.workflow.actions.LabelAction
+
+// A hack to create a named script output stage.  For some reason Jenkins
+// does not want to name script steps, so this hack is used.
+// ref: https://stackoverflow.com/questions/39414921/jenkins-pipeline-sh-display-name-label
+def runShell(def Map vars) {
+    def command = vars["command"]
+    def stepName = vars["stepName"]
+    def returnStatus = vars.get("returnStatus")
+    def returnStdout = vars.get("returnStdout")
+    def output
+
+    try {
+        if (returnStatus) {
+            output = sh(script: command,returnStatus: true)
+        } else if (returnStdout) {
+            output = sh(script: "#!/bin/bash \n"+command,returnStdout: true)
+        }
+        else {
+            output = sh(script: "#!/bin/bash \n"+command,returnStdout: false)
+        }
+    } finally {
+        CpsThread.current().head.get().addAction(new LabelAction("${stepName} "))
+    }
+    return output
+}
+
+
+def printMessage(def Map vars) {
+    def msg = vars["msg"]
+    def stepName = vars["stepName"]
+    def output
+    try {
+        output = echo(msg)
+    } finally {
+        CpsThread.current().head.get().addAction(new LabelAction("${stepName} "))
+    }
+    return output
+}
+
+node(){
+    stage("Without wrapper") {
+
+        echo("<>Variaveis Metodo 1")
+        sh script: "echo 'Variaveis de Ambiente Jenkins:'; env", returnStdout: false
+
+        echo("Variaveis Metodo 2")
+        sh script: """ \
+                    echo 'Variaveis de Ambiente Jenkins:'; \
+                    env;
+                    """
+
+    }
+    stage("With wrapper") {
+
+        // Executando Shell com stdout sendo impresso explicitamente no terminal
+        runShell command: 'echo "Variaveis de ambiente:"; env;',
+                 stepName: "<Nome Step1>: Imprimindo Variaveis de Ambiente do Jenkins metodo 1:",
+                 returnStdout: false
+
+
+        // Imprimindo saida do log do shell contido na variavel('logOutput')
+        printMessage msg: "${env.RUN_DISPLAY_URL}", stepName: "<Nome Step2>: Clique no link  para acessar a execucoes atual:${env.RUN_DISPLAY_URL}"
+
+
+        // Executando Shell e guardando saida numa variavel
+        def logOutput = runShell command: 'env',
+                returnStdout: true,
+                stepName: "<Nome Step3>: Coletando Variaveis de Ambiente Jenkins metodo 2"
+
+        // Imprimindo saida do log do shell contido na variavel('logOutput')
+        printMessage msg: "Environment:${logOutput}", stepName: '<Nome Step4>: Imprimindo Variaveis de Ambiente Jenkins medoto 2'
+
+
+
+        // Executando Shell com stdout sendo impresso explicitamente no terminal
+//        runShell command: """ \
+//                            echo "JENKINS_HOME:${env.JENKINS_HOME}"; \
+//                            ls -la; \
+//                            echo "Diretorio Atual: ${pwd}"; \
+//                            """, stepName: "<Nome Step5>: Coletando e Imprimindo Variaveis de Ambiente Jenkins metodo 3:", returnStdout: false
+
+    }
+}
